@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""Gera _system/MANIFEST.json a partir do vault. Determinístico (sort por path)."""
+"""Gera _system/MANIFEST.json. Determinístico (sort por path), com grafo
+de entrada (inbound) e hubs — os nós em que mais memória gravita."""
 import json, re, sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -36,6 +37,32 @@ def parse_front(text):
     return meta
 
 
+def build_resolve(notes):
+    """Resolução de [[link]]: nome exato do arquivo primeiro; senão o slug de
+    cauda de notas datadas (após o último '--'). Cauda ambígua -> nota com
+    'updated' mais recente. Retorna [índice] ou []."""
+    exact, tails = {}, {}
+    for i, n in enumerate(notes):
+        stem = n["path"].split("/")[-1][:-3].lower()
+        exact.setdefault(stem, i)
+        if "--" in stem:
+            tails.setdefault(stem.rsplit("--", 1)[1], []).append(i)
+
+    def resolve(link):
+        k = link.strip().lower()
+        if k in exact:
+            return [exact[k]]
+        cands = tails.get(k, [])
+        if not cands:
+            return []
+        if len(cands) == 1:
+            return cands
+        best = max(cands, key=lambda i: (notes[i].get("updated", ""), notes[i]["path"]))
+        return [best]
+
+    return resolve
+
+
 def main():
     if len(sys.argv) != 2:
         sys.exit("uso: build_manifest.py <vault>")
@@ -60,14 +87,30 @@ def main():
             "status": meta.get("status", ""), "agent": meta.get("agent", ""),
             "project": meta.get("project", ""), "tags": tags,
             "created": meta.get("created", ""), "updated": meta.get("updated", ""),
+            "shared": meta.get("shared", "false"),
+            "visibility": meta.get("visibility", "local"),
+            "origin": meta.get("origin", ""),
             "links": sorted({t.strip() for t in WIKI.findall(text)}),
             "words": len(text.split()),
         })
+
+    resolve = build_resolve(notes)
+    inbound = [0] * len(notes)
+    for n in notes:
+        for link in set(n["links"]):
+            for j in resolve(link):
+                inbound[j] += 1
+    for n, c in zip(notes, inbound):
+        n["inbound"] = c
+    hubs_idx = sorted(range(len(notes)), key=lambda i: (-inbound[i], notes[i]["path"]))[:5]
+    hubs = [{"name": notes[i]["path"].split("/")[-1][:-3], "path": notes[i]["path"],
+             "inbound": inbound[i]} for i in hubs_idx if inbound[i] > 0]
+
     now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-    out = {"generated": now, "count": len(notes), "notes": notes}
+    out = {"generated": now, "count": len(notes), "hubs": hubs, "notes": notes}
     (vault / "_system" / "MANIFEST.json").write_text(
         json.dumps(out, indent=2, ensure_ascii=False), encoding="utf-8")
-    print(f"[secondmind] manifest: {len(notes)} notas -> _system/MANIFEST.json")
+    print(f"[secondmind] manifest: {len(notes)} notas, {len(hubs)} hubs -> _system/MANIFEST.json")
 
 
 if __name__ == "__main__":

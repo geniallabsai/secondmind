@@ -4,8 +4,10 @@ import argparse, json, shutil
 from datetime import datetime, timezone
 from pathlib import Path
 
-DIRS = ["00-inbox", "01-sessions", "02-projects", "03-concepts", "04-decisions",
-        "05-playbooks", "07-archive", "_system", "_system/TEMPLATES", "_system/PROTOCOL"]
+DIRS = ["00-inbox", "01-sessions", "01-sessions/handoffs", "02-projects",
+        "03-concepts", "04-decisions", "05-playbooks", "06-synapses",
+        "07-archive", "_system", "_system/TEMPLATES", "_system/PROTOCOL",
+        "_system/export"]
 
 INDEX_SEED = """---
 type: system-index
@@ -20,7 +22,7 @@ _(nenhum)_
 ## Sessões recentes
 _(nenhuma)_
 
-## Conceitos-chave
+## Conceitos-chave (hubs)
 _(nenhum)_
 
 ## Playbooks
@@ -72,8 +74,8 @@ def main():
 
     man = vault / "_system" / "MANIFEST.json"
     if not man.exists() or a.force:
-        man.write_text(json.dumps({"generated": now, "count": 0, "notes": []}, indent=2),
-                       encoding="utf-8")
+        man.write_text(json.dumps({"generated": now, "count": 0, "hubs": [], "notes": []},
+                                  indent=2), encoding="utf-8")
 
     gi = vault / ".gitignore"
     if not gi.exists():
@@ -82,7 +84,7 @@ def main():
     print(f"[secondmind] vault ok: {vault}")
     for m in made:
         print("  +", m)
-    print("[secondmind] próximo: injete seu agente (pasta agents/) e rode sm_doctor.py")
+    print("[secondmind] próximo: injete seu agente (agents/MATRIX.md) e rode sm_doctor.py")
 
 
 if __name__ == "__main__":
